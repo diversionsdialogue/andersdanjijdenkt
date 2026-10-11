@@ -1,0 +1,337 @@
+{
+  "name": "andersdanjijdenkt contact",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Formulieren andersdanjijdenkt.nl\n\nOntvangt formulieren via de nginx-proxy op de site (`/api/formulier`).\n\n**Flow:** valideren → spam eruit → lead EERST opslaan in Data Table → direct 200 antwoorden → daarna pas mailen via Mailjet. Faalt de mail, dan staat de lead al veilig in de tabel en markeert n8n de executie als mislukt (error workflow vangt dat op).\n\n### Eenmalige setup\n1. **Credential** type `Header Auth`: header `X-Webhook-Secret`, waarde = zelfde secret als in de nginx-config. Selecteren op de Webhook-node.\n2. **Data Table** `formulierInzendingen-andersdanjijdenkt` aanmaken met string-kolommen voor elk veld uit de validator-uitvoer `inzending`. (id/createdAt/updatedAt bestaan automatisch.)\n3. **Credential** type `Mailjet Email API` (API key + secret key uit het Mailjet-dashboard) selecteren op de Mailjet-node; afzenderdomein moet in Mailjet geverifieerd zijn (SPF/DKIM).\n4. **Error workflow** instellen (workflow-instellingen).\n5. Open elke node met een credential en controleer dat de juiste geselecteerd is.",
+        "height": 620,
+        "width": 460
+      },
+      "id": "b1000000-0000-4000-8000-000000000001",
+      "name": "Sticky Note — setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -780,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "formulier-andersdanjijdenkt",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000002",
+      "name": "Webhook formulieren",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        120
+      ],
+      "webhookId": "b19231dd-af72-4860-b4c9-a2543fdfbbe4"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ (() => { const b = $json.body || {}; const errors = []; const soorten = ['contact']; const tekst = (v) => typeof v === 'string' && v.trim().length > 0; if (!soorten.includes(b.formulier)) errors.push('formulier: verplicht (' + soorten.join(', ') + ')'); if (!tekst(b.voornaam)) errors.push('voornaam: verplicht'); if (!tekst(b.achternaam)) errors.push('achternaam: verplicht'); if (!tekst(b.email) || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(b.email.trim())) errors.push('email: geldig e-mailadres verplicht'); const isSpam = tekst(b.website) || (typeof b.invulTijdSec === 'number' && b.invulTijdSec < 3); return { valid: errors.length === 0, isSpam: isSpam, details: errors, inzending: { formulier: b.formulier || '', voornaam: (b.voornaam || '').trim(), achternaam: (b.achternaam || '').trim(), organisatie: (b.organisatie || '').trim(), email: (b.email || '').trim(), telefoon: (b.telefoon || '').trim(), bericht: (b.bericht || b.vraag || '').trim() } }; })() }}",
+        "options": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000003",
+      "name": "Valideer inzending",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -40,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-is-spam",
+              "leftValue": "={{ $json.isSpam }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000004",
+      "name": "Is spam?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        180,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{ \"success\": true }",
+        "options": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000005",
+      "name": "Spam: nep-succes (200)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-is-geldig",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000006",
+      "name": "Is geldig?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        400,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'validation_error', message: 'Controleer de invoer.', details: $json.details }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "b1000000-0000-4000-8000-000000000007",
+      "name": "Ongeldige invoer (400)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        620,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "formulierInzendingen-andersdanjijdenkt"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "formulier": "={{ $json.inzending.formulier }}",
+            "voornaam": "={{ $json.inzending.voornaam }}",
+            "achternaam": "={{ $json.inzending.achternaam }}",
+            "email": "={{ $json.inzending.email }}",
+            "telefoon": "={{ $json.inzending.telefoon }}",
+            "bericht": "={{ $json.inzending.bericht }}",
+            "organisatie": "={{ $json.inzending.organisatie }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000008",
+      "name": "Bewaar inzending",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        620,
+        120
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{ \"error\": \"internal_error\", \"message\": \"Er ging iets mis bij het verwerken. Probeer het later opnieuw of bel (055) 20 32 193.\" }",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "b1000000-0000-4000-8000-000000000009",
+      "name": "Serverfout (500)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        840,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{ \"success\": true }",
+        "options": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000010",
+      "name": "Succes (200)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        840,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "info@generationjourney.nl",
+        "toEmail": "info@diversions.nl",
+        "subject": "={{ 'Nieuwe inzending (' + $('Valideer inzending').item.json.inzending.formulier + '): ' + $('Valideer inzending').item.json.inzending.voornaam + ' ' + $('Valideer inzending').item.json.inzending.achternaam }}",
+        "text": "={{ (() => { const i = $('Valideer inzending').item.json.inzending; return 'Nieuwe inzending via andersdanjijdenkt.nl\\n\\nFormulier: ' + i.formulier + '\\nNaam: ' + i.voornaam + ' ' + i.achternaam + '\\nOrganisatie: ' + (i.organisatie || '-') + '\\nE-mail: ' + i.email + '\\nTelefoon: ' + (i.telefoon || '-') + '\\n\\nBericht:\\n' + (i.bericht || '-'); })() }}",
+        "additionalFields": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000011",
+      "name": "Mail naar kantoor (Mailjet)",
+      "type": "n8n-nodes-base.mailjet",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        40
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Webhook formulieren": {
+      "main": [
+        [
+          {
+            "node": "Valideer inzending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valideer inzending": {
+      "main": [
+        [
+          {
+            "node": "Is spam?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is spam?": {
+      "main": [
+        [
+          {
+            "node": "Spam: nep-succes (200)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is geldig?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is geldig?": {
+      "main": [
+        [
+          {
+            "node": "Bewaar inzending",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ongeldige invoer (400)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bewaar inzending": {
+      "main": [
+        [
+          {
+            "node": "Succes (200)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Serverfout (500)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Succes (200)": {
+      "main": [
+        [
+          {
+            "node": "Mail naar kantoor (Mailjet)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,1 @@
+import"./app-core.5981e68d.js";import{a as r,_ as n}from"./vendor-other.89d25f3c.js";const s="all-in-one-seo-pack",l=()=>({editPost:t=>r(n("Edit %1$s",s),t||n("Post",s)),getPostIconClass:t=>{const o="dashicons-admin-post";return t?.startsWith("dashicons-awb-")||t?.includes("data:image/svg+xml;base64")?o:t||o},viewPost:t=>r(n("View %1$s",s),t||n("Post",s))});export{l as u};
